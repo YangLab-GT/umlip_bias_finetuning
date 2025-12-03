@@ -5,9 +5,11 @@ import numpy as np
 from pymatgen.io.vasp.outputs import Vasprun
 """First command line argument = directory"""
 def main():
-    delete = bool(sys.argv[2])
+    delete = False
+    if (len(sys.argv) >= 3):
+        delete = bool(sys.argv[2])
     pairs = get_respective_files(sys.argv[1], delete)
-def get_respective_files(root_dir, delete):
+def get_respective_files(root_dir, delete = False):
     """Takes in directory, returns all pairs of POSCAR/vasprun.
     Params:
         Root directory
@@ -26,7 +28,7 @@ def get_respective_files(root_dir, delete):
                 write_info_to_file(os.path.join(dirpath, filename), os.path.join(dirpath, "vasp_info.json"))
             files_to_remove = ["CHG", "CHGCAR", "CONTCAR", "DOSCAR", "EIGENVAL", "IBZKPT", "PCDAT", "PROCAR"]
             for file in files_to_remove:
-                if filename == file:
+                if filename == file and delete == True:
                     file_to_delete = os.path.join(dirpath, filename)
                     os.remove(file_to_delete)
                     print(f"File '{file_to_delete}' deleted.")
