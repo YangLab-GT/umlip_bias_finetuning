@@ -1,11 +1,7 @@
 import argparse
 import numpy as np
-import os
-import sys
-import numpy as np
-import time
 import matplotlib.pyplot as plt
-from ase.io import read, write
+from ase.io import read
 from matplotlib.cm import get_cmap
 from dscribe.descriptors import SOAP
 from sklearn.decomposition import PCA
