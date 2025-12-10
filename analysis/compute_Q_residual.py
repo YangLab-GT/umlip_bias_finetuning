@@ -57,7 +57,7 @@ def main():
     type_to_element = {v: Z_to_element[k] for k, v in key.items()}
     print("==== Plotting ====")
     summary = plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, args.figname, args.plot)
-    
+    plot_all_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, args.figname, args.plot)
     print("==== Q-Residual Summary per Atom Type ====") # gpt generated summary
     print(f"{'Type':>6} | {'N_atoms':>8} | {'Mean Q':>10}")
     print("-" * 30)
@@ -84,7 +84,49 @@ def get_mapping_to_color(eval_dataset):
     mapping = {val: idx for idx, val in enumerate(unique_vals)}
     remapped = np.array([mapping[v] for v in eval_dataset[0].arrays['numbers']])
     return remapped, mapping
+def plot_all_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, figname, plot):
+    """ Generates a plot of Q-residuals for each atom type over the trajectory,
+    collects the mean and number of atoms per type.
 
+    Args:
+        pca (sklearn.decomposition.PCA):
+            PCA model fit to reference descriptors
+        eval_descriptors (numpy.ndarray):
+            Generated evaluation descriptors
+        n_atoms (int):
+            Number of atoms in trajectory
+        mapping (np.ndarray):
+            Mapping of atom types to integers
+        figname (str):
+            Base name for figure files
+    """ 
+    unique_types = np.unique(mapping)
+    cmap = plt.cm.get_cmap('viridis', len(unique_types))
+    colors = [cmap(i) for i in range(len(unique_types))]
+    if plot:
+        plt.figure(figsize=(10, 6))
+    for t_idx, t in enumerate(unique_types):
+        atom_indices = np.where(mapping == t)[0]
+        q_residuals_all = []
+        for i in atom_indices:
+            residuals = compute_q_residuals(pca, eval_descriptors[i::n_atoms])
+            q_residuals_all.extend(residuals)
+            if plot:
+                plt.plot(residuals, color=colors[t_idx], alpha=0.3)
+        q_residuals_all = np.array(q_residuals_all)
+        mean_q = np.mean(q_residuals_all)
+        n_atoms_type = len(atom_indices)
+        if plot:
+            plt.axhline(mean_q, color=colors[t_idx], linestyle='--',
+                        label=f"{type_to_element[t]} (n={n_atoms_type}, mean={mean_q:.2f})")
+    if plot:
+        plt.xlabel("Time Step")
+        plt.ylabel("Q Residual")
+        plt.title("Q-Residuals by Atom Type")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(f"{figname}_all_types.svg")
+        plt.close()
 def plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, figname, plot):
     """ Generates a plot of Q-residuals for each atom type over the trajectory,
     collects the mean and number of atoms per type.
