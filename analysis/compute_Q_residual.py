@@ -112,7 +112,7 @@ def plot_all_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_elemen
             residuals = compute_q_residuals(pca, eval_descriptors[i::n_atoms])
             q_residuals_all.extend(residuals)
             if plot:
-                plt.plot(residuals, color=colors[t_idx], alpha=0.3)
+                plt.plot(residuals, color=colors[t_idx], alpha=0.3, rasterized=True)
         q_residuals_all = np.array(q_residuals_all)
         mean_q = np.mean(q_residuals_all)
         n_atoms_type = len(atom_indices)
