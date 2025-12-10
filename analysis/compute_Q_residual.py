@@ -52,12 +52,11 @@ def main():
     print("==== Evaluation SOAP generated ====")
     print("==== Fitting PCA ====")
     pca = fit_pca(args.pca_components, ref_descriptors)
-    if (args.plot == True):
-        print("==== Generating Color Map ====")
-        mapping, key = get_mapping_to_color(eval_dataset)
-        type_to_element = {v: Z_to_element[k] for k, v in key.items()}
-        print("==== Plotting ====")
-        summary = plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, args.figname)
+    print("==== Generating Color Map ====")
+    mapping, key = get_mapping_to_color(eval_dataset)
+    type_to_element = {v: Z_to_element[k] for k, v in key.items()}
+    print("==== Plotting ====")
+    summary = plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, args.figname, args.plot)
     
     print("==== Q-Residual Summary per Atom Type ====") # gpt generated summary
     print(f"{'Type':>6} | {'N_atoms':>8} | {'Mean Q':>10}")
@@ -86,7 +85,7 @@ def get_mapping_to_color(eval_dataset):
     remapped = np.array([mapping[v] for v in eval_dataset[0].arrays['numbers']])
     return remapped, mapping
 
-def plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, figname):
+def plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, figname, plot):
     """ Generates a plot of Q-residuals for each atom type over the trajectory,
     collects the mean and number of atoms per type.
 
@@ -110,20 +109,23 @@ def plot_q_residuals(pca, eval_descriptors, n_atoms, mapping, type_to_element, f
     colors = [cmap(i) for i in range(len(unique_types))]
     summary = {}
     for t in unique_types:
-        plt.figure()
+        if(plot):
+            plt.figure()
         atom_indices = np.where(mapping == t)[0]
         q_residuals_all = []
         for i in atom_indices:
             residuals = compute_q_residuals(pca, eval_descriptors[i::n_atoms])
             q_residuals_all.extend(residuals)
-            plt.plot(residuals, color=colors[t], alpha=0.5)
+            if(plot):
+                plt.plot(residuals, color=colors[t], alpha=0.5)
         q_residuals_all = np.array(q_residuals_all)
         mean_q = np.mean(q_residuals_all)
         n_atoms_type = len(atom_indices)
         summary[t] = {'mean_q': mean_q, 'n_atoms': n_atoms_type}
-        plt.title(f"Atom Type {type_to_element[t]} (n={n_atoms_type}, mean Q={mean_q:.2f})")
-        plt.savefig(f"{figname}_type_{type_to_element[t]}.svg")
-        plt.close()
+        if(plot):
+            plt.title(f"Atom Type {type_to_element[t]} (n={n_atoms_type}, mean Q={mean_q:.2f})")
+            plt.savefig(f"{figname}_type_{type_to_element[t]}.svg")
+            plt.close()
     return summary
 
 def compute_q_residuals(pca, eval_descriptors):
@@ -238,7 +240,7 @@ def parse_arguments():
     parser.add_argument("--periodic", action="store_false", help="Enable periodic mode (default: True)")
     parser.add_argument("--splice", type=str, default="::100", help="Define splicing for evaluation trajectory (default: ::100)")
     parser.add_argument("--pca_components", type=int, default=5, help="Define number of PC components (default: 5)")
-    parser.add_argument("--plot", action="store_false", help="Plot Q-residuals (default: True)")
+    parser.add_argument("--plot", action="store_true", help="Plot Q-residuals (default: False)")
     parser.add_argument("--figname", type=str, default="qresiduals", help="Title of plotted figure (defualt: qresiduals)")
     args = parser.parse_args()
     return args
