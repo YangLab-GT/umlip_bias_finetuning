@@ -80,8 +80,9 @@ def get_mapping_to_color(eval_dataset):
             Evaluation data
     Returns:
         numpy.ndarray(int):
-            An array of integers
+            Atom types mapped to ordered integers
         dict[str, int]:
+            "atom type": integer
 
     """
     unique_vals = np.unique(eval_dataset[0].arrays['numbers'])
