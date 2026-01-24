@@ -11,6 +11,7 @@ from ase import units
 from ase.md.langevin import Langevin
 from ase.io import read, write
 import numpy as np
+import torch
 from mace.calculators import MACECalculator
 from pymatgen.io.vasp.outputs import Vasprun
 from matplotlib.cm import get_cmap
@@ -19,7 +20,11 @@ from pymatgen.core import Structure
 """First command line argument = directory"""
 """Second CLA = model"""
 def main():
-    calc = MACECalculator(sys.argv[2])
+    if torch.cuda.is_available():
+        device='cuda'
+    else:
+        device='cpu'
+    calc = MACECalculator(sys.argv[2], device=device)
     pairs = get_respective_files(sys.argv[1])
     dft_matrix, mace_matrix, error_matrix, timesteps, mace_stress, dft_stress, dft_energy, mace_energy  = compute_all(pairs, calc)
     # plot_force_parity_components(dft_matrix, mace_matrix, dist_from_interesting)
@@ -218,6 +223,7 @@ def compute_all(pairs, mace_calc):
         print(f"Progress: {percent_done:.2f}% ({i}/{total})")
     dft_energies = np.array(dft_energies)
     mace_energies = np.array(mace_energies)
+    print(dft_energies-mace_energies)
     dft_matrix = np.array(dft_matrix)
     mace_matrix = np.array(mace_matrix)
     error_matrix = np.array(error_matrix)
