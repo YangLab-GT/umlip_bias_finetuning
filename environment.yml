@@ -1,4 +1,4 @@
-name: 20260124_finetuning_paper
+name: mace
 channels:
   - conda-forge
 channel_priority: strict

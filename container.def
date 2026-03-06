@@ -1,0 +1,22 @@
+Bootstrap: docker
+From: continuumio/miniconda3:latest
+%labels
+    Author "Nick Wong"
+    Description "uMLIP Biases Data & Analysis"
+%files 
+    environment.yml /environment.yml
+%post
+    apt-get update && apt-get install -y \
+        build-essential \
+        gfortran \
+        libopenblas-dev \
+        liblapack-dev \
+        && rm -rf /var/lib/apt/lists/*
+    conda env create -f environment.yml
+    conda clean -afy
+%environment
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate mace
+    export PATH=/opt/conda/envs/mace/bin:$PATH
+%runscript
+    exec conda run -n mace jupyter-lab --ip=0.0.0.0 --no-browser --allow-root --NotebookApp.token=''
