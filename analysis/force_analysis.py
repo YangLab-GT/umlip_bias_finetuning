@@ -27,17 +27,70 @@ def main():
     calc = MACECalculator(sys.argv[2], device=device)
     pairs = get_respective_files(sys.argv[1])
     dft_matrix, mace_matrix, error_matrix, timesteps, mace_stress, dft_stress, dft_energy, mace_energy  = compute_all(pairs, calc)
-    # plot_force_parity_components(dft_matrix, mace_matrix, dist_from_interesting)
-    # print(compute_RMSE_and_plot(dft_matrix, mace_matrix, timesteps))
+    atoms = read(pairs[0][0])
+    symbols = list(atoms.get_chemical_symbols())
     print(compute_stress_RMSE(dft_stress, mace_stress))
     print(compute_RMSE(dft_matrix, mace_matrix))
     print(compute_energy_RMSE(dft_energy, mace_energy))
-    # rmse_by_frame = compute_rmse_per_frame(dft_matrix, mace_matrix, timesteps)
-    # plot_rmse_by_frame(rmse_by_frame, timesteps)
-    # for i in range(1,197):
-    #     plot_forces_by_frame(dft_matrix, mace_matrix, i, timesteps)
-    #     plot_forces_by_frame_1x3(dft_matrix, mace_matrix, i, timesteps)
-    #     calculate_energy_drift(dft_matrix, mace_matrix, timesteps, i)
+    print(compute_relative_force_rmse(dft_matrix, mace_matrix))
+    print(print_relative_force_rmse_by_element(compute_relative_force_rmse_by_element(dft_matrix, mace_matrix, symbols)))
+def print_relative_force_rmse_by_element(results, model_name=None):
+    """Pretty-print the dict returned by compute_relative_force_rmse_by_element."""
+    if model_name:
+        print(f"\nPer-element force errors: {model_name}")
+    else:
+        print("\nPer-element force errors")
+    print("-" * 68)
+    header = f"{'Element':<8}{'N_at':>6}{'RMSE':>10}{'<|F|>':>10}{'σ(F)':>10}{'rel/<|F|>':>12}"
+    print(header)
+    print(f"{'':<8}{'':>6}{'(eV/Å)':>10}{'(eV/Å)':>10}{'(eV/Å)':>10}{'(%)':>12}")
+    print("-" * 68)
+    for element, r in results.items():
+        print(f"{element:<8}"
+              f"{r['n_atoms']:>6d}"
+              f"{r['rmse']:>10.4f}"
+              f"{r['mean_abs_component']:>10.4f}"
+              f"{r['std_component']:>10.4f}"
+              f"{r['rel_rmse_mean_pct']:>11.1f}%")
+    print("-" * 78)
+def compute_relative_force_rmse_by_element(dft_matrix, mace_matrix, symbols):
+    symbols = np.asarray(symbols)
+    dft_forces  = dft_matrix[:, :, 3:]
+    mace_forces = mace_matrix[:, :, 3:]
+    error = dft_forces - mace_forces
+    results = {}
+    for element in sorted(set(symbols)):
+        mask = (symbols == element)
+        e_err = error[:, mask, :]
+        e_dft = dft_forces[:, mask, :]
+        rmse = float(np.sqrt(np.mean(e_err ** 2)))
+        mean_abs = float(np.mean(np.abs(e_dft)))
+        std = float(np.std(e_dft))
+        results[element] = {'n_atoms': int(mask.sum()),
+            'n_components': int(e_err.size),
+            'rmse': rmse,
+            'mean_abs_component': mean_abs,
+            'std_component': std,
+            'rel_rmse_mean': rmse / mean_abs,
+            'rel_rmse_mean_pct': 100.0 * rmse / mean_abs,
+        }
+    return results
+def compute_relative_force_rmse(dft_matrix, mace_matrix):
+    dft_forces  = dft_matrix[:, :, 3:]
+    mace_forces = mace_matrix[:, :, 3:]
+    error = dft_forces - mace_forces
+    rmse = float(np.sqrt(np.mean(error ** 2)))
+    mean_abs = float(np.mean(np.abs(dft_forces)))
+    std = float(np.std(dft_forces))
+
+    return {'rmse': rmse,
+        'mean_abs_component': mean_abs,
+        'std_component': std,
+        'rel_rmse_mean': rmse / mean_abs,
+        'rel_rmse_std': rmse / std,
+        'rel_rmse_mean_pct': 100.0 * rmse / mean_abs,
+        'rel_rmse_std_pct': 100.0 * rmse / std,
+    }
 def compute_energy_RMSE(dft, mace):
     return np.sqrt(np.mean((dft-mace)**2))
 def compute_stress_RMSE(dft, mace):
@@ -60,107 +113,6 @@ def compute_RMSE(dft_matrix, mace_matrix):
         error = dft_forces[:, :, i] - mace_forces[:, :, i]
         mse = np.mean(error ** 2)
         rmse[dir] = np.sqrt(mse)
-    return rmse
-import numpy as np
-import matplotlib.pyplot as plt
-
-def compute_RMSE_and_plot(dft_matrix, mace_matrix, timesteps):
-    """
-    Computes per-axis RMSE, overall RMSE per timestep, plots histogram,
-    and finds frame with maximum single-atom force error.
-
-    Params:
-        dft_matrix, mace_matrix: arrays (n_frames, n_atoms, 6)
-        timesteps: list or array of frame indices / times (len = n_frames)
-    """
-    dft_forces = dft_matrix[:, :, 3:]
-    mace_forces = mace_matrix[:, :, 3:]
-    
-
-    n_frames = dft_matrix.shape[0]
-    n_atoms = dft_matrix.shape[1]
-    max_forces_dft = []
-    max_forces_mace = []
-
-    for frame in range(n_frames):
-        # Extract per-atom forces (fx, fy, fz)
-        dft_forces_c = dft_matrix[frame, :, 3:6]  # shape (n_atoms,3)
-        mace_forces_c = mace_matrix[frame, :, 3:6]
-
-        # Compute magnitude of each atom's force
-        dft_mag = np.linalg.norm(dft_forces_c, axis=1)  # shape (n_atoms,)
-        mace_mag = np.linalg.norm(mace_forces_c, axis=1)
-
-        # Take maximum per frame
-        max_forces_dft.append(np.max(dft_mag))
-        max_forces_mace.append(np.max(mace_mag))
-            # Convert to arrays
-    max_forces_dft = np.array(max_forces_dft)
-    max_forces_mace = np.array(max_forces_mace)
-
-    # Plot
-    plt.figure(figsize=(8,4))
-    plt.plot(timesteps, max_forces_dft, 'o', label='DFT max force')
-    plt.plot(timesteps, max_forces_mace, 'o', label='MACE max force')
-    plt.xlabel('Frame')
-    plt.ylabel('Max force magnitude (eV/Å)')
-    plt.title('Maximum force per frame')
-    plt.legend()
-    plt.savefig("results_maxForcePerFrame.svg")
-    # === Global per-axis RMSE ===
-    rmse = {}
-    directions = ['fx', 'fy', 'fz']
-    for i, dir in enumerate(directions):
-        error = dft_forces[:, :, i] - mace_forces[:, :, i]
-        mse = np.mean(error ** 2)
-        rmse[dir] = np.sqrt(mse)
-    # === Overall force magnitude errors ===
-    force_diff = dft_forces - mace_forces
-    mag_error = np.linalg.norm(force_diff, axis=2)
-    
-    # === Per-timestep RMSE ===
-    timestep_rmse = []
-    for i in range(dft_forces.shape[0]):
-        frame_err = dft_forces[i] - mace_forces[i]
-        mse_frame = np.mean(frame_err ** 2)
-        rmse_frame = np.sqrt(mse_frame)
-        timestep_rmse.append(rmse_frame)
-        # print(f"timestep {timesteps[i]} → RMSE = {rmse_frame:.4f} eV/Å")
-
-    timestep_rmse = np.array(timestep_rmse)
-    
-    # # === Find location of maximum error ===
-    # max_idx = np.unravel_index(np.argmax(mag_error), mag_error.shape)
-    # max_conf, max_atom = max_idx
-    # max_val = mag_error[max_conf, max_atom]
-    
-    # print("\n🔍 Largest single-atom force error:")
-    # print(f"   Magnitude: {max_val:.3f} eV/Å")
-    # print(f"   Frame (timestep): {timesteps[max_conf]}")
-    # print(f"   Atom index: {max_atom}")
-    # print(f"   DFT force:  {dft_forces[max_conf, max_atom]}")
-    # print(f"   MACE force: {mace_forces[max_conf, max_atom]}")
-    
-    # === Plot histogram of all force magnitude errors ===
-    plt.figure(figsize=(7,5))
-    plt.hist(mag_error.flatten(), bins=50, edgecolor='black')
-    plt.title("Distribution of Force Errors (‖ΔF‖)")
-    plt.xlabel("Force Error Magnitude (eV/Å)")
-    plt.ylabel("Count")
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.savefig("Test_naive.svg")
-    plt.show()
-    
-    # === Plot RMSE vs timestep ===
-    plt.figure(figsize=(7,5))
-    plt.plot(timesteps, timestep_rmse, 'o')
-    plt.title("RMSE of Forces per Timestep")
-    plt.xlabel("Timestep")
-    plt.ylabel("RMSE (eV/Å)")
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.savefig("RMSE_vs_timestep_periodic.svg")
-    plt.show()
-    
     return rmse
 def get_respective_files(root_dir):
     """Takes in directory, returns all pairs of POSCAR/vasprun.
@@ -363,161 +315,8 @@ def extract_timestep(path):
     parent = os.path.basename(os.path.dirname(path))
     timestep = int(parent.split('.')[-1])
     return timestep
-def compute_rmse_per_frame(dft_matrix, mace_matrix, timesteps):
-    """
-    Computes RMSE per frame for each direction.
-    Returns a dictionary with lists of RMSEs for fx, fy, fz.
-    """
-    directions = ['fx', 'fy', 'fz']
-    rmse_by_frame = {dir: [] for dir in directions}
-    for frame in range(dft_matrix.shape[0]):
-        dft_forces = dft_matrix[frame, :, 3:]
-        mace_forces = mace_matrix[frame, :, 3:]
-        for i, dir in enumerate(directions):
-            error = dft_forces[:, i] - mace_forces[:, i]
-            #error = dft_forces[i] - mace_forces[i]
-            # print(error)
-            mse = np.mean(error ** 2)
-            rmse_by_frame[dir].append(mse)
-    return rmse_by_frame
-def plot_rmse_by_frame(rmse_by_frame, timesteps, title="Per-Frame RMSE by Direction"):
-    """
-    Plots RMSE vs timestep for fx, fy, fz.
-    """
-    plt.figure(figsize=(10, 6))
-    for dir, rmse_values in rmse_by_frame.items():
-        plt.plot(timesteps, rmse_values, 'o', label=f"{dir} error")
 
-    plt.xlabel("Timestep")
-    plt.ylabel("Error (eV/Å)")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    # plt.tight_layout()
-    plt.savefig("error_by_frame_total.png")
-    plt.show()
-import os
-import matplotlib.pyplot as plt
 
-def plot_forces_by_frame_1x3(dft_matrix, mace_matrix, atom_id, timesteps):
-    colors = ['#004488', "#BB5566", "#DDAA33", "#228833", "#7744AA", "#66CCEE"]
 
-    plt.rc('font', size=14)
-    plt.rc('axes', titlesize=16)
-    plt.rc('axes', labelsize=16)
-    plt.rc('xtick', labelsize=11)
-    plt.rc('ytick', labelsize=11)
-    plt.rc('legend', fontsize=11)
-    plt.rc('figure', titlesize=18)
-
-    directions = ['fx', 'fy', 'fz']
-
-    # Create single figure with 3 horizontally aligned subplots
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=False, sharey=True)
-    timesteps = np.array(timesteps)
-    for i, direction in enumerate(directions):
-        ax = axes[i]
-
-        dft_forces = dft_matrix[:, atom_id, 3 + i]
-        md_forces  = mace_matrix[:, atom_id, 3 + i]
-    
-        # Plot
-        ax.plot(timesteps/2000, dft_forces, 'o', alpha=0.8, color=colors[1], label='DFT')
-        ax.plot(timesteps/2000, md_forces, 's', alpha=0.8, color=colors[0], label='MD (MACE)')
-
-        # Labels only (no titles)
-        
-        ax.set_ylabel(f"Force {direction} (eV/Å)")
-        ax.grid(True)
-        # Only first subplot shows legend
-        if i == 2:
-            ax.legend(loc='upper right')
-    axes[0].set_xlabel("Time (ns)")
-    axes[1].set_xlabel("Time (ns)")
-    axes[2].set_xlabel("Time (ns)")
-    plt.tight_layout()
-
-    # Saving
-    results_dir = f"./force_plots/{atom_id}/"
-    if not os.path.isdir(results_dir):
-        os.makedirs(results_dir)
-
-    plt.savefig(f"{results_dir}/forces_1x3.png")
-    plt.close()
-
-def plot_forces_by_frame(dft_matrix, mace_matrix, atom_id, timesteps):
-    colors = ['#004488', "#BB5566", "#DDAA33", "#228833", "#7744AA", "#66CCEE"]
-    plt.rc('font', size=14)          # default text sizes
-    plt.rc('axes', titlesize=16)     # axes title
-    plt.rc('axes', labelsize=16)     # x and y labels
-    plt.rc('xtick', labelsize=11)    
-    plt.rc('ytick', labelsize=11)    
-    plt.rc('legend', fontsize=11)    
-    plt.rc('figure', titlesize=18)  
-    directions = ['fx', 'fy', 'fz']
-    for i, direction in enumerate(directions):
-        dft_forces = dft_matrix[:, atom_id, 3 + i]
-        md_forces  = mace_matrix[:, atom_id, 3 + i]
-        plt.figure(figsize=(8, 5))
-        plt.plot(timesteps, dft_forces, 'o', label='DFT', alpha=0.8, color=colors[1])
-        plt.plot(timesteps, md_forces, 's', label='MD (MACE)', alpha=0.8, color=colors[0])
-        plt.xlabel("Timestep")
-        plt.ylabel(f"Force {direction} (eV/Å)")
-        # plt.title(f"Force Comparison for Atom {atom_id} — {direction}")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        results_dir = f"./force_plots/{atom_id}/"
-        if not os.path.isdir(results_dir):
-            os.makedirs(results_dir)
-        plt.savefig(f"./force_plots/{atom_id}/force_by_frame_{direction}.png")
-        plt.close()
-def calculate_energy_drift(dft_matrix, mace_matrix, timesteps, specific_atom = None):
-    """ Here we compute the integration of force errors over time to see energy drift """
-    timesteps = np.array(timesteps)
-    sort_idx = np.argsort(timesteps)
-    dft_sorted = dft_matrix[sort_idx]
-    mace_sorted = mace_matrix[sort_idx]
-    timesteps_sorted = timesteps[sort_idx]
-    # isolate so easier to deal with...
-    positions = dft_sorted[:, :, 0:3]
-    forces_dft = dft_sorted[:, :, 3:6]
-    forces_mace = mace_sorted[:, :, 3:6]
-    if(specific_atom is not None):
-        positions_s = dft_sorted[:, specific_atom, 0:3]
-        forces_dft_s = dft_sorted[:, specific_atom, 3:6]
-        forces_mace_s = mace_sorted[:, specific_atom, 3:6]
-        # take difference 
-        displacements_s = positions_s[1:] - positions_s[:-1]
-        force_errors_s = forces_mace_s[:-1] - forces_dft_s[:-1]
-        # Compute change in energy
-        delta_U_s = -np.sum(force_errors_s * displacements_s, axis=(1))
-        cumulative_energy_drift_s = np.cumsum(delta_U_s)
-        # Plot energy error vs actual time
-        plt.figure(figsize=(8,5))
-        plt.plot(timesteps_sorted[1:], delta_U_s, marker='o')
-        plt.xlabel("Timestep")
-        plt.ylabel("Cumulative Energy Error (approx.)")
-        plt.title(f"Energy Error over Time - atom {specific_atom}")
-        plt.grid(True)
-        plt.savefig(f"./force_plots/{specific_atom}/energy_drift_{specific_atom}.svg")
-        plt.show()
-    # take difference 
-    displacements = positions[1:] - positions[:-1]
-    force_errors = forces_mace[:-1] - forces_dft[:-1]
-    # Compute change in energy
-    delta_U = -np.sum(force_errors * displacements, axis=(1,2))
-    cumulative_energy_drift = np.cumsum(delta_U)
-
-    # Plot energy error vs actual time
-    plt.figure(figsize=(8,5))
-    plt.plot(timesteps_sorted[1:], delta_U, marker='o')
-    plt.xlabel("Timestep")
-    plt.ylabel("Cumulative Energy Error (approx.)")
-    plt.title("Energy Error over Time")
-    plt.grid(True)
-    plt.savefig("energy_drift.svg")
-    plt.show()
-    return cumulative_energy_drift
 if __name__ == "__main__":
     main()
